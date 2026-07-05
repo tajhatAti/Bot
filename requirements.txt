@@ -2,6 +2,7 @@
 telethon>=1.36.0
 asyncio
 python-dotenv
+aiohttp
 
 # --- Database & Storage ---
 pymongo[srv]
@@ -26,6 +27,5 @@ urllib3
 dateparser
 
 # --- Development & Performance ---
-# (Render deployment requirements)
 gunicorn
 uvloop
