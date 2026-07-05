@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 # মাস্টার বট ইনিশিয়ালাইজেশন
 bot = TelegramClient('master_bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 SESSIONS = {} 
+USER_STATES = {}  # ওটিপি এবং নম্বরের স্টেট ধরে রাখার জন্য গ্লোবাল ডিকশনারি
 
 # ── DUMMY WEB SERVER FOR RENDER (PORT 8080 FIX) ──
 async def handle_render_ping(request):
@@ -31,10 +32,9 @@ async def start_web_server():
     app.add_routes([web.get('/', handle_render_ping)])
     runner = web.AppRunner(app)
     await runner.setup()
-    # সরাসরি কোডেই পোর্ট ৮০৮০ ফিক্সড করে বাইন্ড করা হলো
     site = web.TCPSite(runner, '0.0.0.0', 8080)
     await site.start()
-    logger.info("🟢 Render Port 8080 successfully opened and dummy server started.")
+    logger.info("🟢 Render Port 8080 successfully opened.")
 
 # ── DATABASE HANDLERS ──
 def load_sessions():
@@ -46,14 +46,12 @@ def load_sessions():
 
 def save_session(uid, session_str):
     data = load_sessions()
-    # ডুপ্লিকেট সেশন এড়ানোর চেক
     if not any(item['uid'] == uid for item in data):
         data.append({"uid": uid, "session": session_str})
         with open(DB_FILE, 'w') as f: json.dump(data, f, indent=2)
 
-# ── AUTOMATIC PLUGIN LOADER (১০০০ ফিচারের জন্য) ──
+# ── AUTOMATIC PLUGIN LOADER ──
 def register_plugins(client, uid):
-    # plugins ফোল্ডারের সব ফাইল অটো-লোড করবে
     for file in glob.glob("plugins/*.py"):
         name = os.path.basename(file)[:-3]
         try:
@@ -65,66 +63,105 @@ def register_plugins(client, uid):
             logger.error(f"Failed to load plugin {name}: {e}")
 
 # ── MASTER BOT HANDLERS ──
-@bot.on(events.NewMessage(pattern='/start', from_users=OWNER_ID))
+@bot.on(events.NewMessage(pattern=r'(?i)^/start$', from_users=OWNER_ID))
 async def start_cmd(e):
-    await e.reply("⚡ **Multi-Session Userbot Controller Ready!**\n\nনিচের বাটনে ক্লিক করে তোমার পার্সোনাল অ্যাকাউন্ট কানেক্ট করো।", 
+    USER_STATES.pop(e.sender_id, None) # রিসেট স্টেট
+    await e.reply("⚡ **Multi-Session Userbot Controller Ready!**\n\nনতুন অ্যাকাউন্ট যোগ করতে নিচের বাটনে ক্লিক করো অথবা সরাসরি `/add` কমান্ড দাও।", 
                   buttons=[[Button.inline("➕ Add New Account", data="add_account")]])
 
+@bot.on(events.NewMessage(pattern=r'(?i)^/add$', from_users=OWNER_ID))
+async def add_cmd(e):
+    USER_STATES[e.sender_id] = {"step": "input_phone"}
+    await e.reply("📱 তোমার টেলিগ্রাম নম্বরটি আন্তর্জাতিক ফরম্যাটে দাও (যেমন: `+88017XXXXXXXX`):")
+
 @bot.on(events.CallbackQuery(data=b'add_account'))
-async def add_account_flow(e):
-    if e.sender_id != OWNER_ID: return await e.answer("Access Denied.", alert=True)
-    
+async def add_account_callback(e):
+    if e.sender_id != OWNER_ID: 
+        return await e.answer("Access Denied.", alert=True)
+    USER_STATES[e.sender_id] = {"step": "input_phone"}
     await e.edit("📱 তোমার টেলিগ্রাম নম্বরটি আন্তর্জাতিক ফরম্যাটে দাও (যেমন: `+88017XXXXXXXX`):")
-    
-    async with bot.conversation(e.sender_id, timeout=300) as conv:
+
+# ── STATE MANAGEMENT INPUT HANDLER ──
+@bot.on(events.NewMessage(from_users=OWNER_ID))
+async def handle_steps(e):
+    if e.text.startswith('/'): return
+    state = USER_STATES.get(e.sender_id)
+    if not state: return
+
+    step = state.get("step")
+
+    # স্টেপ ১: ফোন নম্বর ইনপুট নেওয়া
+    if step == "input_phone":
+        phone = e.text.strip().replace(" ", "")
+        m = await e.reply("`OTP কোড পাঠানো হচ্ছে...`")
         try:
-            # ফোন নম্বর গ্রহণ
-            phone_msg = await conv.get_response()
-            phone = phone_msg.text.strip().replace(" ", "")
-            
-            await e.respond("`OTP কোড পাঠানো হচ্ছে...`")
             client = TelegramClient(StringSession(), API_ID, API_HASH)
             await client.connect()
-            
             code_request = await client.send_code_request(phone)
-            await e.respond("📩 তোমার টেলিগ্রাম অ্যাপে পাঠানো OTP কোডটি দাও:")
             
-            # ওটিপি কোড গ্রহণ
-            otp_msg = await conv.get_response()
-            otp = otp_msg.text.strip().replace(" ", "")
-            
-            try:
-                await client.sign_in(phone, otp, phone_code_hash=code_request.phone_code_hash)
-            except Exception as login_err:
-                # যদি 2FA (Two-Factor Authentication) অন থাকে
-                await e.respond("🔐 Two-Factor Authentication (2FA) পাসওয়ার্ডটি দাও:")
-                pwd_msg = await conv.get_response()
-                await client.sign_in(password=pwd_msg.text.strip())
-            
-            me = await client.get_me()
-            uid = me.id
-            sess_str = client.session.save()
-            
-            # মেমোরি ও ফাইল ডেটাবেজে সেভ
-            save_session(uid, sess_str)
-            SESSIONS[uid] = client
-            
-            # প্লাগিনস লোড করা
-            register_plugins(client, uid)
-            
-            await e.respond(f"🎉 **লগইন সফল!**\n👤 User: **{me.first_name}** (ID: `{uid}`)\nএখন থেকে এই অ্যাকাউন্টে সব ইউজারবট ফিচার কাজ করবে।")
-            
-        except asyncio.TimeoutError:
-            await e.respond("❌ সময় শেষ (Timeout)! আবার চেষ্টা করো।")
+            # পরবর্তী স্টেপের জন্য ডাটা স্টোর
+            USER_STATES[e.sender_id] = {
+                "step": "input_otp",
+                "phone": phone,
+                "phone_code_hash": code_request.phone_code_hash,
+                "client": client
+            }
+            await m.edit("An OTP message has been sent to your Telegram app.\n\n📩 ওটিপি কোডটি দাও:")
         except Exception as ex:
-            await e.respond(f"❌ লগইন ব্যর্থ হয়েছে: `{ex}`")
+            USER_STATES.pop(e.sender_id, None)
+            await m.edit(f"❌ কোড পাঠাতে ব্যর্থ: `{ex}`\nআবার শুরু করতে `/add` দাও।")
+
+    # স্টেপ ২: ওটিপি ইনপুট নেওয়া
+    elif step == "input_otp":
+        otp = e.text.strip().replace(" ", "")
+        client = state["client"]
+        phone = state["phone"]
+        phone_code_hash = state["phone_code_hash"]
+        
+        m = await e.reply("`যাচাই করা হচ্ছে...`")
+        try:
+            try:
+                await client.sign_in(phone, otp, phone_code_hash=phone_code_hash)
+            except Exception as login_err:
+                # যদি টু-ফ্যাক্টর অথেনটিকেশন (2FA) লাগে
+                USER_STATES[e.sender_id]["step"] = "input_password"
+                await m.edit("🔐 তোমার অ্যাকাউন্টে Two-Factor Authentication (2FA) অন আছে।\n\nতোমার ক্লাউড পাসওয়ার্ডটি দাও:")
+                return
+            
+            # সফল লগইন প্রসেস
+            await process_successful_login(e, client, m)
+
+        except Exception as ex:
+            USER_STATES.pop(e.sender_id, None)
+            await m.edit(f"❌ লগইন ব্যর্থ: `{ex}`\nআবার চেষ্টা করতে `/add` দাও।")
+
+    # স্টেপ ৩: টু-ফ্যাক্টর পাসওয়ার্ড ইনপুট নেওয়া
+    elif step == "input_password":
+        pwd = e.text.strip()
+        client = state["client"]
+        m = await e.reply("`পাসওয়ার্ড চেক করা হচ্ছে...`")
+        try:
+            await client.sign_in(password=pwd)
+            await process_successful_login(e, client, m)
+        except Exception as ex:
+            USER_STATES.pop(e.sender_id, None)
+            await m.edit(f"❌ পাসওয়ার্ড ভুল বা ত্রুটি ঘটেছে: `{ex}`\nআবার শুরু করতে `/add` দাও।")
+
+async def process_successful_login(event, client, status_msg):
+    me = await client.get_me()
+    uid = me.id
+    sess_str = client.session.save()
+    
+    save_session(uid, sess_str)
+    SESSIONS[uid] = client
+    
+    register_plugins(client, uid)
+    USER_STATES.pop(event.sender_id, None)
+    await status_msg.edit(f"🎉 **লগইন সফল!**\n👤 অ্যাকাউন্ট: **{me.first_name}** (ID: `{uid}`)\n\nইউজারবট এখন সচল।")
 
 # ── SYSTEM STARTUP ──
 async def startup_process():
-    # প্রথমে Render এর জন্য পোর্ট ৮০৮০ ওপেন করা
     await start_web_server()
-    
-    # পূর্বে সেভ থাকা সেশনগুলো ব্যাকগ্রাউন্ডে রানিং করা
     saved_data = load_sessions()
     logger.info(f"Found {len(saved_data)} saved sessions to load.")
     
