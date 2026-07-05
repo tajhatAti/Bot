@@ -29,3 +29,5 @@ dateparser
 # --- Development & Performance ---
 gunicorn
 uvloop
+psutil
+
