@@ -1,31 +1,46 @@
 import asyncio
 from telethon import events
+from telethon.errors import FloodWaitError
 
 def register(client):
-    @client.on(events.NewMessage(pattern=r'(?i)^[.!]hack$'))
-    async def hack_anim(e):
+    prefixes = ['.', '/', '!']
+    bot_username = client.get_me().username
+    
+    @client.on(events.NewMessage(pattern=f'(?i)^({"".join(prefixes)}{bot_username}?:?)?.*(hack|magic)$'))
+    async def animation(e):
         if not getattr(e, 'out', False): return
+        sender = await e.get_sender()
+        if sender.id == client.get_me().id:
+            msg = await e.edit('')
+        else:
+            reply = await e.reply('')
+            await asyncio.sleep(2)
+            msg = reply
         
-        animation_frames = [
-            "🟢 `Initializing hacking tools...`",
-            "🟡 `Bypassing Telegram security protocols...`",
-            "🔴 `Extracting target's IP address... [████░░░░░░] 40%`",
-            "🔴 `Decrypting chat database... [███████░░░] 70%`",
-            "🔵 `Uploading data to local server... [██████████] 100%`",
-            "✅ **System breached successfully!**\n\n🎯 **Target Data:**\nIP: `192.168.1.104`\nDevice: `Android 14`"
-        ]
-        
-        m = await e.edit(animation_frames[0])
-        for frame in animation_frames[1:]:
-            await asyncio.sleep(0.8) # Smooth delay
-            await m.edit(frame)
-
-    @client.on(events.NewMessage(pattern=r'(?i)^[.!]magic$'))
-    async def magic_anim(e):
-        if not getattr(e, 'out', False): return
-        
-        frames = ["(>‿◠)✌", "ᕙ(`▿´)ᕗ", "༼ つ ◕_◕ ༽つ", "(▀Ĺ̯▀ )", "✅ **Magic Loaded!**"]
-        m = await e.edit(frames[0])
-        for frame in frames[1:]:
-            await asyncio.sleep(0.5)
-            await m.edit(frame)
+        if 'hack' in e.text:
+            animation_frames = [
+                "🟢 `Initializing hacking tools...`",
+                "🟡 `Bypassing Telegram security protocols...`",
+                "🔴 `Extracting target's IP address... [████░░░░░░] 40%`",
+                "🔴 `Decrypting chat database... [███████░░░] 70%`",
+                "🔵 `Uploading data to local server... [██████████] 100%`",
+                "✅ **System breached successfully!**\n\n🎯 **Target Data:**\nIP: `192.168.1.104`\nDevice: `Android 14`"
+            ]
+            for frame in animation_frames:
+                try:
+                    await msg.edit(frame)
+                    await asyncio.sleep(1)
+                except FloodWaitError:
+                    await asyncio.sleep(10)
+                    continue
+        elif 'magic' in e.text:
+            frames = ["(>‿◠)✌", "ᕙ(`▿´)ᕗ", "༼ つ ◕_◕ ༽つ", "(▀Ĺ̯▀ )", "✅ **Magic Loaded!**"]
+            for frame in frames:
+                try:
+                    await msg.edit(frame)
+                    await asyncio.sleep(1)
+                except FloodWaitError:
+                    await asyncio.sleep(10)
+                    continue
+        await asyncio.sleep(6)
+        await msg.delete()
