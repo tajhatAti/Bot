@@ -2,7 +2,7 @@ import urllib.request
 import json
 from telethon import events
 
-def register(client):
+def register(client, uid):
     @client.on(events.NewMessage(pattern=r'(?i)^[.!]crypto(?: |$)(.*)'))
     async def crypto_price(e):
         coin = e.pattern_match.group(1).strip().lower()
