@@ -3,7 +3,7 @@ import json
 import asyncio
 from telethon import events, helpers
 
-def register(client):
+def register(client, uid):
     @client.on(events.NewMessage(pattern=r'(?i)(?:\.(?:/|!))\s*(?:@?(?P<username>[^ ]+|))?\s*(?:\.(?:/|!))? (.*)'))
     async def generate_carbon(event):
         username = event.pattern_match.group('username')
@@ -32,7 +32,7 @@ def register(client):
             with open(out_file, "wb") as f:
                 f.write(img_data)
                 
-            await client.send_file(event.chat_id, out_file, caption=f"💻 **Code snippet beautified via Ray.so**")
+            await client.send_file(event.chat_id, out_file, caption=f"💻 **Code snippet beautified via ****Ray.so**")
             await asyncio.sleep(6)
             await (event.delete() if event.sender_id == int(client.me.id) else (m.delete()))
         except Exception as ex:
