@@ -1,0 +1,31 @@
+# --- Core Framework ---
+telethon>=1.36.0
+asyncio
+python-dotenv
+
+# --- Database & Storage ---
+pymongo[srv]
+motor
+
+# --- Media & Image Processing ---
+Pillow
+gTTS
+qrcode
+moviepy
+
+# --- Web Scraping & API Requests ---
+beautifulsoup4
+requests
+httpx
+yt-dlp
+
+# --- Utilities & Translations ---
+deep-translator
+wikipedia
+urllib3
+dateparser
+
+# --- Development & Performance ---
+# (Render deployment requirements)
+gunicorn
+uvloop
