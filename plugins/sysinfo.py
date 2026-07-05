@@ -3,28 +3,29 @@ import psutil
 from telethon import events
 
 def get_progress_bar(percentage, length=15):
-    filled = int(length * percentage // 100)
-    bar = "█" * filled + "░" * (length - filled)
-    return f"[{bar}] {percentage}%"
+    return f"[{'█' * (int(length * percentage // 100)) + '░' * (length - int(length * percentage // 100))}] {percentage}%"
 
 def register(client):
-    @client.on(events.NewMessage(pattern=r'(?i)^[.!]sysinfo$'))
+    @client.on(events.NewMessage(pattern=r'(?i)(?<!\!)^([.!]/)?@\w+?\s*(\!)?sysinfo$', incoming=True))
     async def system_info(e):
-        start_time = time.time()
-        m = await e.edit("`Fetching system parameters...`") if getattr(e, 'out', False) else await e.reply("`Fetching...`")
+        await e.respond("`Fetching system parameters...`")
+        await e.respond.delete(delay=6)
         
         cpu = psutil.cpu_percent(interval=0.5)
-        ram = psutil.virtual_memory().percent
-        disk = psutil.disk_usage('/').percent
-        ping = int((time.time() - start_time) * 1000)
+        ram = str(psutil.virtual_memory().percent)
+        disk = str(psutil.disk_usage('/').percent)
+        ping = int((time.time() - e.created_at.timestamp()) * 1000)
         
         sys_text = (
-            "💻 **System Information**\n\n"
+            "**System Information**\n\n"
             f"**CPU Core:** {psutil.cpu_count(logical=True)}\n"
             f"**CPU Usage:**\n`{get_progress_bar(cpu)}`\n\n"
-            f"**RAM Usage:**\n`{get_progress_bar(ram)}`\n\n"
-            f"**Disk Usage:**\n`{get_progress_bar(disk)}`\n\n"
-            f"⚡ **Ping:** `{ping}ms`"
+            f"**RAM Usage:**\n`{get_progress_bar(ram)}%\n\n"
+            f"**Disk Usage:**\n`{get_progress_bar(disk)}%\n\n"
+            f"**Ping:** {ping}ms"
         )
         
-        await m.edit(sys_text)
+        if e.is_channel and e.message.out:
+            msg = await e.reply(sys_text)
+        else:
+            msg = await e.edit(sys_text)
